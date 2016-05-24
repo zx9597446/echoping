@@ -11,9 +11,13 @@ import (
 )
 
 var remoteAddr = flag.String("r", "", "remote addr")
-var payloadSize = flag.Int("s", 32, "payload size")
-var interval = flag.Int64("i", 1, "interval in seconds")
-var count = flag.Int("c", 1, "send count")
+var payloadSize = flag.Int("s", 64, "payload size")
+var interval = flag.Int64("i", 50, "interval in milliseconds")
+var count = flag.Int("c", 50, "send count")
+
+var min = 0xFFFFFFFFFFF
+var max = 0
+var avg = int64(0)
 
 func encodePacket() []byte {
 	payload := randString(*payloadSize)
@@ -22,46 +26,43 @@ func encodePacket() []byte {
 	return sendTime
 }
 
-func decodeLatency(bs []byte) time.Duration {
+func decodeLatency(bs []byte) int {
 	before := time.Time{}
 	err := before.UnmarshalBinary(bs)
 	if err != nil {
 		log.Fatal(err)
 	}
-	return time.Since(before)
+	t := time.Since(before) / time.Millisecond
+	return int(t)
 }
 
-func handleReceive(conn net.Conn) {
+func handleReceive(conn net.Conn, notify chan struct{}) {
 	bs := make([]byte, 15)
 	ps := make([]byte, *payloadSize)
-	i := 0
-	min := 0xFFFFFFFFFFF
-	max := 0
 	all := int64(0)
-	for {
+	for i := 0; i < *count; i++ {
 		_, err := io.ReadFull(conn, bs)
 		if err != nil {
 			log.Println(err)
 			break
 		}
-		elapsed := decodeLatency(bs) * time.Millisecond
-		iElapsed := int(elapsed)
-		if iElapsed > max {
-			max = iElapsed
+		elapsed := decodeLatency(bs)
+		if elapsed > max {
+			max = elapsed
 		}
-		if iElapsed < min {
-			min = iElapsed
+		if elapsed < min {
+			min = elapsed
 		}
-		all = all + int64(iElapsed)
-		log.Printf("packet RTT: [%d] ms", elapsed)
+		log.Printf("[%d] packet RTT: [%d] ms", i, elapsed)
 		_, err = io.ReadFull(conn, ps)
 		if err != nil {
 			log.Println(err)
 			break
 		}
-		i = i + 1
+		all = all + int64(elapsed)
+		avg = all / int64(i+1)
 	}
-	log.Println("RTT min: %d, RTT max: %d, RTT avg: %d\n", min, max, all/int64(i))
+	notify <- struct{}{}
 }
 
 func main() {
@@ -71,7 +72,8 @@ func main() {
 		log.Panicln(err)
 	}
 	defer conn.Close()
-	go handleReceive(conn)
+	notify := make(chan struct{}, 1)
+	go handleReceive(conn, notify)
 	for i := 0; i < *count; i++ {
 		buf := strings.NewReader(string(encodePacket()))
 		_, err := io.CopyN(conn, buf, int64(buf.Len()))
@@ -79,8 +81,10 @@ func main() {
 			log.Println(err)
 			break
 		}
-		time.Sleep(time.Duration(*interval) * time.Second)
+		time.Sleep(time.Duration(*interval) * time.Millisecond)
 	}
+	<-notify
+	log.Printf("RTT min: [%d] ms, RTT max: [%d] ms, RTT avg: [%d] ms\n", min, max, avg)
 }
 
 var src = rand.NewSource(time.Now().UnixNano())
