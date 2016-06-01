@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -14,13 +15,18 @@ var remoteAddr = flag.String("r", "", "remote addr")
 var payloadSize = flag.Int("s", 64, "payload size")
 var interval = flag.Int64("i", 50, "interval in milliseconds")
 var count = flag.Int("c", 50, "send count")
+var number = flag.Int("n", 1, "how many connections")
 
-var min = 0xFFFFFFFFFFF
-var max = 0
-var avg = int64(0)
+var payload string
+
+type Result struct {
+	max, min, avg int
+}
 
 func encodePacket() []byte {
-	payload := randString(*payloadSize)
+	if len(payload) == 0 {
+		payload = randString(*payloadSize)
+	}
 	sendTime, _ := time.Now().MarshalBinary()
 	sendTime = append(sendTime, payload...)
 	return sendTime
@@ -36,10 +42,13 @@ func decodeLatency(bs []byte) int {
 	return int(t)
 }
 
-func handleReceive(conn net.Conn, notify chan struct{}) {
+func handleReceive(conn net.Conn, notify chan Result) {
 	bs := make([]byte, 15)
 	ps := make([]byte, *payloadSize)
 	all := int64(0)
+	max := 0xFFFFFFFFFFFFFFF
+	min := (0)
+	avg := (0)
 	for i := 0; i < *count; i++ {
 		_, err := io.ReadFull(conn, bs)
 		if err != nil {
@@ -60,19 +69,17 @@ func handleReceive(conn net.Conn, notify chan struct{}) {
 			break
 		}
 		all = all + int64(elapsed)
-		avg = all / int64(i+1)
+		avg = int(all / int64(i+1))
 	}
-	notify <- struct{}{}
+	notify <- Result{max, min, avg}
 }
 
-func main() {
-	flag.Parse()
-	conn, err := net.Dial("tcp", *remoteAddr)
+func runOne(remoteAddr string, notify chan Result) {
+	conn, err := net.Dial("tcp", remoteAddr)
 	if err != nil {
 		log.Panicln(err)
 	}
 	defer conn.Close()
-	notify := make(chan struct{}, 1)
 	go handleReceive(conn, notify)
 	for i := 0; i < *count; i++ {
 		buf := strings.NewReader(string(encodePacket()))
@@ -84,7 +91,22 @@ func main() {
 		time.Sleep(time.Duration(*interval) * time.Millisecond)
 	}
 	<-notify
-	log.Printf("RTT min: [%d] ms, RTT max: [%d] ms, RTT avg: [%d] ms\n", min, max, avg)
+}
+
+func main() {
+	flag.Parse()
+	wg := &sync.WaitGroup{}
+	for i := 0; i < *number; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			notify := make(chan Result, 1)
+			runOne(*remoteAddr, notify)
+			ret := <-notify
+			log.Printf("RTT min: [%d] ms, RTT max: [%d] ms, RTT avg: [%d] ms\n", ret.min, ret.max, ret.avg)
+		}()
+	}
+	wg.Wait()
 }
 
 var src = rand.NewSource(time.Now().UnixNano())
