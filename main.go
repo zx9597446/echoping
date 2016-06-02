@@ -20,6 +20,7 @@ var payloadSize = flag.Int("s", 64, "payload size")
 var interval = flag.Int64("i", 50, "interval in milliseconds")
 var count = flag.Int("c", 50, "send count")
 var number = flag.Int("n", 1, "how many connections")
+var protocol = flag.String("p", "tcp", "protocol: tcp or udp")
 
 var payload string
 
@@ -84,7 +85,7 @@ func handleReceive(conn net.Conn, notify chan Result) {
 }
 
 func runOne(remoteAddr string, notify chan Result) {
-	conn, err := net.Dial("tcp", remoteAddr)
+	conn, err := net.Dial(*protocol, remoteAddr)
 	if err != nil {
 		log.Panicln(err)
 	}
