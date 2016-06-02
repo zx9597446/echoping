@@ -2,10 +2,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,8 +23,11 @@ var number = flag.Int("n", 1, "how many connections")
 
 var payload string
 
+const headSize = 15
+
 type Result struct {
 	max, min, avg int
+	data          []int
 }
 
 func encodePacket() []byte {
@@ -43,12 +50,13 @@ func decodeLatency(bs []byte) int {
 }
 
 func handleReceive(conn net.Conn, notify chan Result) {
-	bs := make([]byte, 15)
+	bs := make([]byte, headSize)
 	ps := make([]byte, *payloadSize)
 	all := int64(0)
-	max := 0xFFFFFFFFFFFFFFF
-	min := (0)
+	max := 0
+	min := 0xFFFFFFFFFFFFFFF
 	avg := (0)
+	data := make([]int, *count)
 	for i := 0; i < *count; i++ {
 		_, err := io.ReadFull(conn, bs)
 		if err != nil {
@@ -63,6 +71,7 @@ func handleReceive(conn net.Conn, notify chan Result) {
 			min = elapsed
 		}
 		log.Printf("[%d] packet RTT: [%d] ms", i, elapsed)
+		data[i] = elapsed
 		_, err = io.ReadFull(conn, ps)
 		if err != nil {
 			log.Println(err)
@@ -71,7 +80,7 @@ func handleReceive(conn net.Conn, notify chan Result) {
 		all = all + int64(elapsed)
 		avg = int(all / int64(i+1))
 	}
-	notify <- Result{max, min, avg}
+	notify <- Result{max, min, avg, data}
 }
 
 func runOne(remoteAddr string, notify chan Result) {
@@ -90,23 +99,57 @@ func runOne(remoteAddr string, notify chan Result) {
 		}
 		time.Sleep(time.Duration(*interval) * time.Millisecond)
 	}
-	<-notify
+}
+
+func makeCharts(idx int, data []int) {
+	t := time.Now()
+	now := fmt.Sprintf("%d-%d-%dH%dM%dS%d-%d", t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), idx)
+	const header = `
+# The chart type , option : spline/line/bar/column/area
+ChartType = spline
+Title = packet RTT latency (ms)
+SubTitle = %s
+ValueSuffix = ms 
+
+# The x Axis numbers. The count this numbers MUST be the same with the data series
+XAxisNumbers = %s
+
+# The y Axis text
+YAxisText = Latency (ms)
+
+# The data and the name of the lines
+Data|Latency = %s
+`
+	x := []string{}
+	d := []string{}
+	for i := 0; i < len(data); i++ {
+		x = append(x, strconv.Itoa(i))
+		d = append(d, strconv.Itoa(data[i]))
+	}
+	sx := strings.Join(x, ", ")
+	sd := strings.Join(d, ", ")
+
+	all := fmt.Sprintf(header, now, sx, sd)
+	ioutil.WriteFile(now+".chart", []byte(all), os.ModePerm)
 }
 
 func main() {
 	flag.Parse()
+	results := make(chan Result, *number)
 	wg := &sync.WaitGroup{}
 	for i := 0; i < *number; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			notify := make(chan Result, 1)
-			runOne(*remoteAddr, notify)
-			ret := <-notify
-			log.Printf("RTT min: [%d] ms, RTT max: [%d] ms, RTT avg: [%d] ms\n", ret.min, ret.max, ret.avg)
+			runOne(*remoteAddr, results)
 		}()
 	}
 	wg.Wait()
+	for i := 0; i < *number; i++ {
+		ret := <-results
+		makeCharts(i, ret.data)
+		log.Printf("RTT min: [%d] ms, RTT max: [%d] ms, RTT avg: [%d] ms\n", ret.min, ret.max, ret.avg)
+	}
 }
 
 var src = rand.NewSource(time.Now().UnixNano())
