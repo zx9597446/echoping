@@ -21,6 +21,7 @@ var interval = flag.Int64("i", 50, "interval in milliseconds")
 var count = flag.Int("c", 50, "send count")
 var number = flag.Int("n", 1, "how many connections")
 var protocol = flag.String("p", "tcp", "protocol: tcp or udp")
+var genCharts = flag.Bool("g", false, "generate charts")
 
 var payload string
 
@@ -148,7 +149,9 @@ func main() {
 	wg.Wait()
 	for i := 0; i < *number; i++ {
 		ret := <-results
-		makeCharts(i, ret.data)
+		if *genCharts {
+			makeCharts(i, ret.data)
+		}
 		log.Printf("RTT min: [%d] ms, RTT max: [%d] ms, RTT avg: [%d] ms\n", ret.min, ret.max, ret.avg)
 	}
 }
