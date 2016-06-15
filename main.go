@@ -17,7 +17,7 @@ import (
 
 var remoteAddr = flag.String("r", "", "remote addr")
 var payloadSize = flag.Int("s", 64, "payload size")
-var interval = flag.Int64("i", 50, "interval in milliseconds")
+var interval = flag.Int64("i", 100, "interval in milliseconds")
 var count = flag.Int("c", 50, "send count")
 var number = flag.Int("n", 1, "how many connections")
 var protocol = flag.String("p", "tcp", "protocol: tcp or udp")
