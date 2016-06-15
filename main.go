@@ -32,10 +32,11 @@ type Result struct {
 	data          []int
 }
 
+func init() {
+	payload = randString(*payloadSize)
+}
+
 func encodePacket() []byte {
-	if len(payload) == 0 {
-		payload = randString(*payloadSize)
-	}
 	sendTime, _ := time.Now().MarshalBinary()
 	sendTime = append(sendTime, payload...)
 	return sendTime
