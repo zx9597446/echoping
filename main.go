@@ -138,6 +138,7 @@ Data|Latency = %s
 
 func main() {
 	flag.Parse()
+	log.SetFlags(log.Flags() | log.Lshortfile)
 	results := make(chan Result, *number)
 	wg := &sync.WaitGroup{}
 	for i := 0; i < *number; i++ {
