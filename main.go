@@ -52,7 +52,7 @@ func decodeLatency(bs []byte) int {
 	return int(t)
 }
 
-func handleReceive(conn net.Conn, notify chan Result) {
+func handleReceive(n int, conn net.Conn, notify chan Result) {
 	bs := make([]byte, headSize)
 	ps := make([]byte, *payloadSize)
 	all := int64(0)
@@ -73,7 +73,7 @@ func handleReceive(conn net.Conn, notify chan Result) {
 		if elapsed < min {
 			min = elapsed
 		}
-		log.Printf("[%d] packet RTT: [%d] ms", i, elapsed)
+		log.Printf("conn: [%d]->[%d] packet RTT: [%d] ms", i, elapsed)
 		data[i] = elapsed
 		_, err = io.ReadFull(conn, ps)
 		if err != nil {
@@ -86,13 +86,13 @@ func handleReceive(conn net.Conn, notify chan Result) {
 	notify <- Result{max, min, avg, data}
 }
 
-func runOne(remoteAddr string, notify chan Result) {
+func runOne(n int, remoteAddr string, notify chan Result) {
 	conn, err := net.Dial(*protocol, remoteAddr)
 	if err != nil {
 		log.Panicln(err)
 	}
 	defer conn.Close()
-	go handleReceive(conn, notify)
+	go handleReceive(n, conn, notify)
 	for i := 0; i < *count; i++ {
 		buf := strings.NewReader(string(encodePacket()))
 		_, err := io.CopyN(conn, buf, int64(buf.Len()))
@@ -145,7 +145,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			runOne(*remoteAddr, results)
+			runOne(i, *remoteAddr, results)
 		}()
 	}
 	wg.Wait()
