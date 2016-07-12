@@ -143,10 +143,10 @@ func main() {
 	wg := &sync.WaitGroup{}
 	for i := 0; i < *number; i++ {
 		wg.Add(1)
-		go func() {
+		go func(j int) {
 			defer wg.Done()
-			runOne(i, *remoteAddr, results)
-		}()
+			runOne(j, *remoteAddr, results)
+		}(i)
 	}
 	wg.Wait()
 	for i := 0; i < *number; i++ {
