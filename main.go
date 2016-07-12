@@ -73,7 +73,7 @@ func handleReceive(n int, conn net.Conn, notify chan Result) {
 		if elapsed < min {
 			min = elapsed
 		}
-		log.Printf("conn: [%d]->[%d] packet RTT: [%d] ms", i, elapsed)
+		log.Printf("conn: [%d]->[%d] packet RTT: [%d] ms", n, i, elapsed)
 		data[i] = elapsed
 		_, err = io.ReadFull(conn, ps)
 		if err != nil {
